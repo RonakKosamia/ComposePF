@@ -225,6 +225,31 @@
     data class DirectorySearchResponse(
       val people: List<PeopleFinderItem> = emptyList()
     )
+
+suspend fun searchPeople(
+  query: String,
+  accessToken: String
+): DirectorySearchResponse {
+  return client.post("https://people.googleapis.com/v1/people:searchDirectoryPeople") {
+    header("Authorization", "Bearer $accessToken")
+    contentType(ContentType.Application.Json)
+
+    // This makes sure Ktor serializes the request body properly
+    setBody(
+      JsonObject(
+        mapOf(
+          "query" to JsonPrimitive(query),
+          "readMask" to JsonPrimitive(
+            "names,emailAddresses,phoneNumbers,photos,organizations,relations,externalIds"
+          ),
+          "sources" to JsonArray(
+            listOf(JsonPrimitive("DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE"))
+          )
+        )
+      )
+    )
+  }.body() // <-- This is the key to force deserialization into DirectorySearchResponse
+}
     
     
     
