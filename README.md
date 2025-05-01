@@ -10,7 +10,37 @@ This update replaces the old `TabIndex`-based logic with chip-based filters (`Re
 
 
 
+is PeopleFinderUIState.Data -> {
+  val people = state.contacts
 
+  if (people.isEmpty()) {
+    Column(
+      modifier = Modifier.fillMaxSize(),
+      verticalArrangement = Arrangement.Center,
+      horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+      Image(
+        painter = painterResource(R.drawable.team_work),
+        contentDescription = "Empty"
+      )
+      Spacer(modifier = Modifier.height(16.dp))
+      Text("Search for an Associate")
+    }
+  } else {
+    LazyColumn(
+      modifier = Modifier.fillMaxSize(),
+      contentPadding = PaddingValues(vertical = 12.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+      items(people) { person ->
+        RecentListItem(
+          people = person,
+          navController = navController
+        )
+      }
+    }
+  }
+}
 
 
 
