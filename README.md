@@ -1,7 +1,17 @@
+## People Finder Filter Chip View
 
-'' kotlin
+This section renders the filter chips for the `People Finder` screen, allowing users to toggle between **Recent** and **Followed** views.
 
-// -- Chip Row --
+### UX Behavior
+
+- Two **mutually exclusive chips**: `Recent` and `Followed`.
+- The selected chip shows a **filled background**.
+- The unselected chip is **outlined**.
+- Selection triggers an `onAction` to update the view model.
+
+### Composable Snippet
+
+```kotlin
 Row(
   modifier = Modifier
     .fillMaxWidth()
@@ -46,5 +56,19 @@ Row(
   )
 }
 
-''
+
+
+
+```kotlin
+
+enum class DateFilter {
+  RECENT, FOLLOWED
+}
+
+sealed class PFViewModelAction {
+  data class OnFilterSelected(
+    val filterType: ChipFilterType,
+    val selected: DateFilter
+  ) : PFViewModelAction()
+}
 
