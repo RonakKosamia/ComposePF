@@ -7,7 +7,78 @@ This update replaces the old `TabIndex`-based logic with chip-based filters (`Re
 ## ViewModel
 
 ```kotlin
-@HiltViewModel
+
+
+
+
+
+
+
+@## RecentListItem – using Gravity Card
+
+```kotlin
+@Composable
+fun RecentListItem(
+  people: DirectoryPerson,
+  navController: NavController
+) {
+  Card(
+    params = cardParams {
+      decoration = Decoration.ELEVATION
+      cornerRadius = CornerRadius.Medium
+    },
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = GravityTheme.spacing.medium1),
+    onClick = {
+      navController.navigate(
+        "peopleFinderDetails/${people.externalIds?.firstOrNull()?.value}"
+      )
+    }
+  ) {
+    ListItem(
+      headlineContent = {
+        Text(
+          text = people.names?.firstOrNull()?.givenName ?: "-",
+          style = GravityTheme.typography.textStyles.titleMedium
+        )
+      },
+      supportingContent = {
+        Column {
+          people.emailAddresses?.firstOrNull()?.value?.let {
+            Text(it, style = GravityTheme.typography.textStyles.bodyMedium)
+          }
+          Text(
+            text = people.organizations?.firstOrNull()?.department ?: "--",
+            style = GravityTheme.typography.textStyles.labelLarge
+          )
+        }
+      },
+      leadingContent = {
+        AsyncImage(
+          model = ImageRequest.Builder(LocalContext.current)
+            .data(people.photos?.firstOrNull()?.url)
+            .diskCacheKey(System.currentTimeMillis().toString())
+            .build(),
+          contentScale = ContentScale.Crop,
+          modifier = Modifier
+            .size(56.dp)
+            .clip(CircleShape)
+            .background(
+              GravityTheme.colors.background.inactiveEmphasisLow
+            ),
+          contentDescription = null
+        )
+      },
+      trailingContent = {
+        IconButton(onClick = { /* TODO: Favorite */ }) {
+          Icon(Icons.Default.Star, contentDescription = "Favorite")
+        }
+      }
+    )
+  }
+}
+
 class PeopleFinderViewModel @Inject constructor(
   private val repository: PeopleFinderRepository
 ) : ViewModel() {
