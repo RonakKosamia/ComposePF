@@ -93,6 +93,25 @@ class GoogleAuthUiProviderImpl(
 }
 
 
+val authClient = Identity.getAuthorizationClient(context)
+
+val request = AuthorizationRequest.builder()
+    .setRequestedScopes(
+        listOf(Scope("https://www.googleapis.com/auth/directory.readonly"))
+    )
+    .requestOfflineAccess(clientId, true)
+    .build()
+
+val result = authClient.authorize(request)
+val intentSender = result.pendingIntent.intentSender
+
+val launcherRequest = IntentSenderRequest.Builder(intentSender).build()
+(launcher as ActivityResultLauncher<IntentSenderRequest>).launch(launcherRequest)
+
+
+
+
+
 
 
 
