@@ -1,210 +1,144 @@
+## PeopleFinderScreen.kt (Compose + GravityTheme + Chips + Search Toggle)
 
 ```kotlin
-actual class GoogleAuthUiProviderImpl(
-    private val launcher: GoogleAuthLauncher,
-    private val activity: Activity,
-    private val onTokenAvailable: (String?) -> Unit
-) : GoogleAuthUiProvider {
-
-    override suspend fun requestAccessToken(): String? {
-        // Trigger launch. Return null; result will come async via onTokenAvailable
-        val request = launcher.buildAuthorizationRequest()
-        launcher.launchAuthorizationIntent(activity, request)
-        return null
-    }
-
-    fun handleAuthorizationResult(data: Intent?) {
-        val result = launcher.extractAuthorizationResult(data ?: return)
-        val code = result?.serverAuthCode ?: return onTokenAvailable(null)
-        CoroutineScope(Dispatchers.IO).launch {
-            val token = exchangeCodeForAccessToken(code)
-            withContext(Dispatchers.Main) { onTokenAvailable(token) }
-        }
-    }
-}
-
-
-
-val launcher = remember { GoogleAuthLauncher(context) }
-
-val authProvider = remember {
-    GoogleAuthUiProviderImpl(
-        launcher = launcher,
-        activity = activity,
-        onTokenAvailable = { token ->
-            viewModel.onGoogleAccessToken(token)
-        }
-    )
-}
-
-
-val authResultLauncher = rememberLauncherForActivityResult(
-    ActivityResultContracts.StartIntentSenderForResult()
-) { result ->
-    authProvider.handleAuthorizationResult(result.data)
-}
-
-
-private val _googleToken = MutableStateFlow<String?>(null)
-val googleToken: StateFlow<String?> = _googleToken
-
-fun onGoogleAccessToken(token: String?) {
-    _googleToken.value = token
-}
-
-GlobalViewModel.googleToken.collectAsState()
-
-
-class GoogleAuthUiProviderImpl(
-  private val context: Context,
-  private val activity: Activity,
-  private val clientId: String,
-  private val onTokenAvailable: (String?) -> Unit
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+actual fun PeopleFinderScreen(
+  navController: Any,
+  onPersonClicked: (DirectoryPerson) -> Unit,
+  token: String?
 ) {
-  private val authClient = Identity.getAuthorizationClient(context)
+  val viewModel: PeopleFinderViewModel = koinViewModel()
+  val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+  val filterState by viewModel.filterState.collectAsStateWithLifecycle()
+  val searchText by viewModel.searchText.collectAsStateWithLifecycle()
 
-  fun launchAuthorization(
-    activity: Activity,
-    launcher: ActivityResultLauncher<IntentSenderRequest>
-  ) {
-    val request = AuthorizationRequest.builder()
-      .setRequestedScopes(
-        listOf(Scope("https://www.googleapis.com/auth/directory.readonly"))
+  val shouldShowSearchBar = remember { mutableStateOf(false) }
+  val searchQuery = remember { mutableStateOf("") }
+
+  Scaffold(
+    modifier = Modifier.fillMaxSize(),
+    topBar = {
+      NavigationTop(
+        titleVariant = NavigationTopTitle.Text("People"),
+        background = NavigationTopBackground.Color(
+          color = GravityTheme.colors.background.brand
+        ),
+        contentColorOnImage = true,
+        alignment = NavigationTopTitleAlignment.CENTER,
+        leadingAction = NavigationTopAction.Icon(
+          icon = vectorResource(Res.drawable.grv_ui_arrow_left_lined),
+          contentDescription = "Back icon"
+        ),
+        trailingActions = NavigationTopTrailingActions.Icons(
+          actions = listOf(
+            NavigationTopAction.Icon(
+              icon = Icons.Sharp.Search,
+              contentDescription = "Search"
+            )
+          ).toImmutableList()
+        ),
+        onLeadingActionClick = {
+          (navController as NavController).popBackStack()
+        },
+        onTrailingActionClick = { identifier ->
+          if (identifier == NavigationTopActionIdentifier.PRIMARY) {
+            shouldShowSearchBar.value = true
+          }
+        },
+        searchBarParams = NavigationTopSearchBarParams(
+          showSearchBar = shouldShowSearchBar.value,
+          onSearchBarDismiss = {
+            shouldShowSearchBar.value = false
+            searchQuery.value = ""
+            viewModel.setSearchVisibility(false)
+            viewModel.onAction(
+              PFViewModelAction.OnFilterSelected(FilterType.RECENT)
+            )
+          },
+          onSearchQueryChange = {
+            searchQuery.value = it
+            viewModel.onSearchQueryChanged(it)
+          },
+          onSearch = {
+            viewModel.onSearchQueryChanged(searchQuery.value)
+          },
+          searchInitialQuery = searchQuery.value,
+          searchPlaceholderText = "Search for an Associate"
+        )
       )
-      .requestOfflineAccess(clientId, true)
-      .build()
+    }
+  ) { innerPadding ->
 
-    val intentSender = authClient.authorize(request).intentSender
-    val requestWrapper = IntentSenderRequest.Builder(intentSender).build()
-    launcher.launch(requestWrapper)
-  }
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(innerPadding)
+    ) {
+      Column(
+        modifier = Modifier.fillMaxSize()
+      ) {
+        // Always visible filter chips
+        PeopleFilterView(
+          viewModel = viewModel,
+          onAction = viewModel::onAction
+        )
 
-  fun handleAuthorizationResult(data: Intent) {
-    val result = authClient.getAuthorizationResultFromIntent(data)
-    val code = result?.serverAuthCode ?: return onTokenAvailable(null)
+        when (val state = uiState) {
+          is PeopleFinderUIState.Loading -> {
+            Box(
+              modifier = Modifier.fillMaxSize(),
+              contentAlignment = Alignment.Center
+            ) {
+              CircularProgressIndicator()
+            }
+          }
 
-    CoroutineScope(Dispatchers.IO).launch {
-      val token = exchangeCodeForAccessToken(code)
-      withContext(Dispatchers.Main) {
-        onTokenAvailable(token)
+          is PeopleFinderUIState.Data -> {
+            val people = state.contacts
+
+            if (people.isEmpty()) {
+              Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+              ) {
+                Image(
+                  painter = painterResource(R.drawable.team_work),
+                  contentDescription = "Empty"
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Search for an Associate")
+              }
+            } else {
+              LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                  vertical = GravityTheme.spacing.medium1,
+                  horizontal = GravityTheme.spacing.medium1
+                ),
+                verticalArrangement = Arrangement.spacedBy(GravityTheme.spacing.medium1)
+              ) {
+                items(people) { person ->
+                  RecentListItem(
+                    people = person,
+                    navController = navController as NavController
+                  )
+                }
+              }
+            }
+          }
+
+          is PeopleFinderUIState.Error -> {
+            Box(
+              modifier = Modifier.fillMaxSize(),
+              contentAlignment = Alignment.Center
+            ) {
+              Text("Error: ${state.errorMessage}")
+            }
+          }
+        }
       }
     }
   }
 }
-
-
-val authClient = Identity.getAuthorizationClient(context)
-
-val request = AuthorizationRequest.builder()
-    .setRequestedScopes(
-        listOf(Scope("https://www.googleapis.com/auth/directory.readonly"))
-    )
-    .requestOfflineAccess(clientId, true)
-    .build()
-
-val result = authClient.authorize(request)
-val intentSender = result.pendingIntent.intentSender
-
-val launcherRequest = IntentSenderRequest.Builder(intentSender).build()
-(launcher as ActivityResultLauncher<IntentSenderRequest>).launch(launcherRequest)
-
-
-
-
-
-
-import android.app.Activity
-import android.content.Context
-import android.content.Intent
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.IntentSenderRequest
-import com.google.android.gms.auth.api.identity.AuthorizationRequest
-import com.google.android.gms.auth.api.identity.Identity
-import com.google.android.gms.auth.api.identity.AuthorizationResult
-import com.google.android.gms.auth.api.identity.AuthorizationClient
-import com.google.android.gms.auth.api.identity.Scope
-import io.ktor.client.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import kotlinx.coroutines.*
-import kotlinx.serialization.json.*
-
-actual class GoogleAuthUiProvider(
-    private val context: Context,
-    private val clientId: String
-) {
-    private val authClient: AuthorizationClient by lazy {
-        Identity.getAuthorizationClient(context)
-    }
-
-    private var tokenCallback: ((String?) -> Unit)? = null
-
-    actual fun launch(
-        activity: Any,
-        launcher: Any,
-        onTokenAvailable: (String?) -> Unit
-    ) {
-        tokenCallback = onTokenAvailable
-
-        val request = AuthorizationRequest.builder()
-            .setRequestedScopes(
-                listOf(Scope("https://www.googleapis.com/auth/directory.readonly"))
-            )
-            .requestOfflineAccess(clientId, true)
-            .build()
-
-        val pendingIntentResult = authClient.authorize(request)
-        val intentSender = pendingIntentResult.pendingIntent.intentSender
-        val requestWrapper = IntentSenderRequest.Builder(intentSender).build()
-
-        @Suppress("UNCHECKED_CAST")
-        (launcher as ActivityResultLauncher<IntentSenderRequest>).launch(requestWrapper)
-    }
-
-    actual fun handleAuthorizationResult(data: Any) {
-        val intent = data as? Intent ?: return
-        val result = authClient.getAuthorizationResultFromIntent(intent)
-        val code = result?.serverAuthCode ?: return tokenCallback?.invoke(null)
-
-        CoroutineScope(Dispatchers.IO).launch {
-            val token = exchangeCodeForAccessToken(code)
-            withContext(Dispatchers.Main) {
-                tokenCallback?.invoke(token)
-                tokenCallback = null
-            }
-        }
-    }
-
-    private suspend fun exchangeCodeForAccessToken(code: String): String? {
-        val http = HttpClient()
-        val response = http.submitForm(
-            url = "https://oauth2.googleapis.com/token",
-            formParameters = Parameters.build {
-                append("code", code)
-                append("client_id", clientId)
-                append("grant_type", "authorization_code")
-                append("redirect_uri", "https://www.google.com")
-            }
-        )
-
-        if (!response.status.isSuccess()) return null
-        val body = response.bodyAsText()
-        val json = Json.parseToJsonElement(body).jsonObject
-        return json["access_token"]?.jsonPrimitive?.content
-    }
-}
-expect class GoogleAuthUiProvider {
-    fun launch(
-        activity: Any,
-        launcher: Any,
-        onTokenAvailable: (String?) -> Unit
-    )
-
-    fun handleAuthorizationResult(data: Any)
-}
-
-
-
-
-
