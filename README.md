@@ -113,6 +113,97 @@ val launcherRequest = IntentSenderRequest.Builder(intentSender).build()
 
 
 
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
+import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.auth.api.identity.AuthorizationResult
+import com.google.android.gms.auth.api.identity.AuthorizationClient
+import com.google.android.gms.auth.api.identity.Scope
+import io.ktor.client.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
+import kotlinx.coroutines.*
+import kotlinx.serialization.json.*
+
+actual class GoogleAuthUiProvider(
+    private val context: Context,
+    private val clientId: String
+) {
+    private val authClient: AuthorizationClient by lazy {
+        Identity.getAuthorizationClient(context)
+    }
+
+    private var tokenCallback: ((String?) -> Unit)? = null
+
+    actual fun launch(
+        activity: Any,
+        launcher: Any,
+        onTokenAvailable: (String?) -> Unit
+    ) {
+        tokenCallback = onTokenAvailable
+
+        val request = AuthorizationRequest.builder()
+            .setRequestedScopes(
+                listOf(Scope("https://www.googleapis.com/auth/directory.readonly"))
+            )
+            .requestOfflineAccess(clientId, true)
+            .build()
+
+        val pendingIntentResult = authClient.authorize(request)
+        val intentSender = pendingIntentResult.pendingIntent.intentSender
+        val requestWrapper = IntentSenderRequest.Builder(intentSender).build()
+
+        @Suppress("UNCHECKED_CAST")
+        (launcher as ActivityResultLauncher<IntentSenderRequest>).launch(requestWrapper)
+    }
+
+    actual fun handleAuthorizationResult(data: Any) {
+        val intent = data as? Intent ?: return
+        val result = authClient.getAuthorizationResultFromIntent(intent)
+        val code = result?.serverAuthCode ?: return tokenCallback?.invoke(null)
+
+        CoroutineScope(Dispatchers.IO).launch {
+            val token = exchangeCodeForAccessToken(code)
+            withContext(Dispatchers.Main) {
+                tokenCallback?.invoke(token)
+                tokenCallback = null
+            }
+        }
+    }
+
+    private suspend fun exchangeCodeForAccessToken(code: String): String? {
+        val http = HttpClient()
+        val response = http.submitForm(
+            url = "https://oauth2.googleapis.com/token",
+            formParameters = Parameters.build {
+                append("code", code)
+                append("client_id", clientId)
+                append("grant_type", "authorization_code")
+                append("redirect_uri", "https://www.google.com")
+            }
+        )
+
+        if (!response.status.isSuccess()) return null
+        val body = response.bodyAsText()
+        val json = Json.parseToJsonElement(body).jsonObject
+        return json["access_token"]?.jsonPrimitive?.content
+    }
+}
+expect class GoogleAuthUiProvider {
+    fun launch(
+        activity: Any,
+        launcher: Any,
+        onTokenAvailable: (String?) -> Unit
+    )
+
+    fun handleAuthorizationResult(data: Any)
+}
+
 
 
 
