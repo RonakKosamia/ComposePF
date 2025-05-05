@@ -8,17 +8,19 @@ fun PeopleDetailsScreen(person: DirectoryPerson) {
     modifier = Modifier.fillMaxSize(),
     topBar = {
       NavigationTop(
-        titleVariant = NavigationTopTitle.Text(person.names?.firstOrNull()?.displayName ?: "-"),
-        background = NavigationTopBackground.Color(GravityTheme.colors.background.brand),
+        titleVariant = NavigationTopTitle.Text(
+          title = person.names?.firstOrNull()?.displayName ?: "--"
+        ),
+        background = NavigationTopBackground.Color(
+          color = GravityTheme.colors.background.brand
+        ),
         alignment = NavigationTopTitleAlignment.CENTER,
         contentColorOnImage = true,
         leadingAction = NavigationTopAction.Icon(
           icon = Icons.AutoMirrored.Filled.ArrowBack,
           contentDescription = "Back"
         ),
-        onLeadingActionClick = {
-          (context as? Activity)?.onBackPressedDispatcher?.onBackPressed()
-        }
+        onLeadingActionClick = { (context as? Activity)?.onBackPressed() }
       )
     }
   ) { innerPadding ->
@@ -28,115 +30,89 @@ fun PeopleDetailsScreen(person: DirectoryPerson) {
         .padding(innerPadding)
         .fillMaxSize()
         .verticalScroll(rememberScrollState())
-        .padding(horizontal = GravityTheme.spacing.medium1)
     ) {
-      Spacer(modifier = Modifier.height(GravityTheme.spacing.medium2))
 
-      // Avatar
-      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-        AsyncImage(
-          model = person.photos?.firstOrNull()?.url,
-          contentDescription = "Profile photo",
-          contentScale = ContentScale.Crop,
-          modifier = Modifier
-            .size(96.dp)
-            .clip(CircleShape)
-            .background(GravityTheme.colors.background.inactiveEmphasisLow)
-        )
-      }
-
-      Spacer(modifier = Modifier.height(GravityTheme.spacing.medium1))
-
-      // Job Title
-      Text(
-        text = person.organizations?.firstOrNull()?.title ?: "--",
-        modifier = Modifier.align(Alignment.CenterHorizontally),
-        style = GravityTheme.typography.textStyles.medium2Bold
-      )
-
-      Spacer(modifier = Modifier.height(GravityTheme.spacing.medium2))
-
-      // Action Buttons
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
+      // --- Blue Header Block ---
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(GravityTheme.colors.background.brand)
+          .padding(horizontal = GravityTheme.spacing.medium1)
       ) {
-        ProfileActionItem(icon = R.drawable.ic_email, text = "Email", person)
-        ProfileActionItem(icon = R.drawable.ic_text, text = "Text", person)
-        ProfileActionItem(icon = R.drawable.ic_call, text = "Call", person)
-        ProfileActionItem(icon = R.drawable.ic_star, text = "Follow", person)
+        Column(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+          Spacer(Modifier.height(GravityTheme.spacing.medium2))
+
+          AsyncImage(
+            model = person.photos?.firstOrNull()?.url,
+            contentDescription = "Profile photo",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+              .size(96.dp)
+              .clip(CircleShape)
+          )
+
+          Spacer(Modifier.height(GravityTheme.spacing.medium1))
+
+          Text(
+            text = person.organizations?.firstOrNull()?.title ?: "--",
+            style = GravityTheme.typography.textStyles.medium2SemiBold
+          )
+
+          Spacer(Modifier.height(GravityTheme.spacing.medium2))
+
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+          ) {
+            ProfileActionItem(R.drawable.ppl_finder_mail, "Email", person)
+            ProfileActionItem(R.drawable.ppl_finder_chat, "Text", person)
+            ProfileActionItem(R.drawable.ppl_finder_phone, "Call", person)
+            ProfileActionItem(R.drawable.ic_download, "Download", person)
+            ProfileActionItem(R.drawable.ic_star, "Follow", person)
+          }
+
+          Spacer(Modifier.height(GravityTheme.spacing.medium1))
+
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+          ) {
+            GravityButton(text = "Slack") {
+              context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("slack://open")
+              })
+            }
+
+            GravityButton(text = "Google Calendar") {
+              context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("com.google.calendar://")
+              })
+            }
+          }
+
+          Spacer(Modifier.height(GravityTheme.spacing.large1))
+        }
       }
 
-      Spacer(modifier = Modifier.height(GravityTheme.spacing.large1))
-
-      // Profile Grid
-      Column {
+      // --- Profile Detail Grid (White Background) ---
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(GravityTheme.colors.background.canvas)
+          .padding(horizontal = GravityTheme.spacing.medium1)
+      ) {
         ProfileDetailItem("EID", person.metadata?.sources?.firstOrNull()?.id ?: "--")
         ProfileDetailItem("Location", person.locations?.firstOrNull()?.value ?: "--")
         ProfileDetailItem("Department", person.organizations?.firstOrNull()?.department ?: "--")
-        ProfileDetailItem("Organization", person.organizations?.firstOrNull()?.name ?: "--")
-        ProfileDetailItem("Job Family", person.organizations?.firstOrNull()?.jobFamily ?: "--")
+        ProfileDetailItem("Organization", person.organizations?.firstOrNull()?.title ?: "--")
+        ProfileDetailItem("Job Family", person.organizations?.firstOrNull()?.department ?: "--")
         ProfileDetailItem("Email", person.emailAddresses?.firstOrNull()?.value ?: "--")
         ProfileDetailItem("Phone", person.phoneNumbers?.firstOrNull()?.value ?: "--")
-        ProfileDetailItem("Manager", person.relations?.firstOrNull()?.person?.displayName ?: "--")
+        ProfileDetailItem("Manager", person.relations?.firstOrNull()?.person ?: "--")
       }
     }
   }
 }
-
-
-
-@Composable
-fun ProfileActionItem(icon: Int, text: String, person: DirectoryPerson) {
-  val context = LocalContext.current
-
-  Column(
-    horizontalAlignment = Alignment.CenterHorizontally,
-    modifier = Modifier
-      .clickable {
-        when (text) {
-          "Email" -> sendEmail(context, person.emailAddresses?.firstOrNull()?.value ?: "")
-          "Call"  -> sendPhoneCall(context, person.phoneNumbers?.firstOrNull()?.value ?: "")
-          "Text"  -> sendTextMessage(context, person.phoneNumbers?.firstOrNull()?.value ?: "")
-          "Follow" -> {/* TODO: Hook into follow state */}
-        }
-      }
-  ) {
-    Icon(
-      painter = painterResource(icon),
-      contentDescription = text,
-      modifier = Modifier.size(28.dp),
-      tint = GravityTheme.colors.icon.neutralPrimary
-    )
-    Text(
-      text = text,
-      style = GravityTheme.typography.textStyles.smallRegular,
-      modifier = Modifier.padding(top = 4.dp)
-    )
-  }
-}
-@Composable
-fun ProfileDetailItem(title: String, value: String) {
-  Column(modifier = Modifier
-    .fillMaxWidth()
-    .padding(vertical = GravityTheme.spacing.small1)
-  ) {
-    Text(
-      text = title,
-      style = GravityTheme.typography.textStyles.bodyMedium.copy(fontWeight = FontWeight.Bold)
-    )
-    Text(
-      text = value,
-      style = GravityTheme.typography.textStyles.bodyMedium
-    )
-  }
-}
-
-
-
-
-
-
-
-
-
