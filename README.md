@@ -1,118 +1,211 @@
 
 ```kotlin
-@Composable
-fun PeopleDetailsScreen(person: DirectoryPerson) {
-  val context = LocalContext.current
 
-  Scaffold(
-    modifier = Modifier.fillMaxSize(),
-    topBar = {
-      NavigationTop(
-        titleVariant = NavigationTopTitle.Text(
-          title = person.names?.firstOrNull()?.displayName ?: "--"
-        ),
-        background = NavigationTopBackground.Color(
-          color = GravityTheme.colors.background.brand
-        ),
-        alignment = NavigationTopTitleAlignment.CENTER,
-        contentColorOnImage = true,
-        leadingAction = NavigationTopAction.Icon(
-          icon = Icons.AutoMirrored.Filled.ArrowBack,
-          contentDescription = "Back"
-        ),
-        onLeadingActionClick = { (context as? Activity)?.onBackPressed() }
+
+/////////////////////////////////////MainActivity.kt///////////////////////////
+
+lateinit var triggerAuthRequest: () -> Unit
+
+override fun onCreate(savedInstanceState: Bundle?) {
+  super.onCreate(savedInstanceState)
+
+  GoogleTokenStoreProvider.initialize(applicationContext)
+
+ val pendingIntentLauncher = registerForActivityResult(
+  ActivityResultContracts.StartIntentSenderForResult()
+) { result ->
+  try {
+    val authResult = Identity.getAuthorizationClient(this)
+      .getAuthorizationResultFromIntent(result.data)
+
+    val token = authResult.accessToken
+    val expiry = System.currentTimeMillis() + 3600_000
+    GoogleTokenStoreProvider.get().setToken(token, expiry)
+    GoogleAuthDispatcher.notifyTokenReceived(token)
+
+  } catch (e: ApiException) {
+    Log.e("MainActivity", "Auth failed: ${e.status}")
+    GoogleAuthDispatcher.notifyTokenReceived(null) // Fallback
+  }
+}
+
+
+triggerAuthRequest = {
+    val scope = Scope("https://www.googleapis.com/auth/directory.readonly")
+    val authRequest = AuthorizationRequest.Builder()
+      .setRequestedScopes(listOf(scope))
+      .requestOfflineAccess(
+        serverClientId = "765854762916-<client-id>.apps.googleusercontent.com",
+        forceCodeForRefreshToken = true
       )
-    }
-  ) { innerPadding ->
+      .build()
 
-    Column(
-      modifier = Modifier
-        .padding(innerPadding)
-        .fillMaxSize()
-        .verticalScroll(rememberScrollState())
-    ) {
-
-      // --- Blue Header Block ---
-      Box(
-        modifier = Modifier
-          .fillMaxWidth()
-          .background(GravityTheme.colors.background.brand)
-          .padding(horizontal = GravityTheme.spacing.medium1)
-      ) {
-        Column(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-          Spacer(Modifier.height(GravityTheme.spacing.medium2))
-
-          AsyncImage(
-            model = person.photos?.firstOrNull()?.url,
-            contentDescription = "Profile photo",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-              .size(96.dp)
-              .clip(CircleShape)
-          )
-
-          Spacer(Modifier.height(GravityTheme.spacing.medium1))
-
-          Text(
-            text = person.organizations?.firstOrNull()?.title ?: "--",
-            style = GravityTheme.typography.textStyles.medium2SemiBold
-          )
-
-          Spacer(Modifier.height(GravityTheme.spacing.medium2))
-
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-          ) {
-            ProfileActionItem(R.drawable.ppl_finder_mail, "Email", person)
-            ProfileActionItem(R.drawable.ppl_finder_chat, "Text", person)
-            ProfileActionItem(R.drawable.ppl_finder_phone, "Call", person)
-            ProfileActionItem(R.drawable.ic_download, "Download", person)
-            ProfileActionItem(R.drawable.ic_star, "Follow", person)
-          }
-
-          Spacer(Modifier.height(GravityTheme.spacing.medium1))
-
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-          ) {
-            GravityButton(text = "Slack") {
-              context.startActivity(Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("slack://open")
-              })
-            }
-
-            GravityButton(text = "Google Calendar") {
-              context.startActivity(Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("com.google.calendar://")
-              })
-            }
-          }
-
-          Spacer(Modifier.height(GravityTheme.spacing.large1))
+    Identity.getAuthorizationClient(this)
+      .authorize(authRequest)
+      .addOnSuccessListener { result ->
+        if (result.hasResolution()) {
+          val intentSender = result.pendingIntent!!.intentSender
+          val intent = IntentSenderRequest.Builder(intentSender).build()
+          pendingIntentLauncher.launch(intent)
+        } else {
+          val token = result.accessToken
+          val expiry = System.currentTimeMillis() + 3600_000
+          GoogleTokenStoreProvider.get().setToken(token, expiry)
+          GoogleAuthDispatcher.notifyTokenReceived(token)
         }
       }
-
-      // --- Profile Detail Grid (White Background) ---
-      Column(
-        modifier = Modifier
-          .fillMaxWidth()
-          .background(GravityTheme.colors.background.canvas)
-          .padding(horizontal = GravityTheme.spacing.medium1)
-      ) {
-        ProfileDetailItem("EID", person.metadata?.sources?.firstOrNull()?.id ?: "--")
-        ProfileDetailItem("Location", person.locations?.firstOrNull()?.value ?: "--")
-        ProfileDetailItem("Department", person.organizations?.firstOrNull()?.department ?: "--")
-        ProfileDetailItem("Organization", person.organizations?.firstOrNull()?.title ?: "--")
-        ProfileDetailItem("Job Family", person.organizations?.firstOrNull()?.department ?: "--")
-        ProfileDetailItem("Email", person.emailAddresses?.firstOrNull()?.value ?: "--")
-        ProfileDetailItem("Phone", person.phoneNumbers?.firstOrNull()?.value ?: "--")
-        ProfileDetailItem("Manager", person.relations?.firstOrNull()?.person ?: "--")
+      .addOnFailureListener { e ->
+        Log.e("MainActivity", "Authorization failed", e)
+        GoogleAuthDispatcher.notifyTokenReceived(null)
       }
+  }
+
+  GoogleAuthDispatcher.setLauncher {
+    triggerAuthRequest()
+  }
+
+  setContent {
+    App(platformFeatureProvider)
+  }
+}
+
+/////////////////////////////////////GoogleAuthDispatcher.kt///////////////////////////
+features/core/commonMain/kotlin/com/..../core/auth/GoogleAuthDispatcher.kt
+////////////////////////////////////////////////////////////////
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+
+object GoogleAuthDispatcher {
+
+  // Holds reference to trigger launcher from feature
+  private var launcher: (() -> Unit)? = null
+
+  // State-safe way to observe token after launch
+  private val _pendingTokenCallback =
+    MutableStateFlow<((String?) -> Unit)?>(null)
+
+  fun setLauncher(launchFunc: () -> Unit) {
+    launcher = launchFunc
+  }
+
+  fun requestTokenIfNeeded(
+    context: Any, // ViewModel-safe param
+    onTokenAvailable: (String?) -> Unit
+  ) {
+    val store = GoogleTokenStoreProvider.get()
+    val token = store.getToken()
+    if (token != null) {
+      onTokenAvailable(token)
+    } else {
+      _pendingTokenCallback.update { onTokenAvailable }
+      launcher?.invoke()
+    }
+  }
+
+  fun notifyTokenReceived(token: String?) {
+    _pendingTokenCallback.value?.invoke(token)
+    _pendingTokenCallback.update { null }
+  }
+
+  fun reset() {
+    _pendingTokenCallback.update { null }
+  }
+}
+
+
+//////////////////////PFViewmodel.kt-//////////////////////
+fun onScreenOpened(context: Context) {
+  GoogleAuthDispatcher.requestTokenIfNeeded(context) { token ->
+    if (!token.isNullOrBlank()) {
+      fetchPeople(token)
+    } else {
+      showLoginError()
     }
   }
 }
+
+
+//////////////////////////////
+features/core/commonMain/kotlin/com/..../core/auth/GoogleTokenStore.kt
+////////////////////////
+
+
+interface GoogleTokenStore {
+  suspend fun setToken(token: String, expiresAtMillis: Long)
+  suspend fun getToken(): String?
+  suspend fun isTokenValid(): Boolean
+  suspend fun clearToken()
+}
+
+//////////////////////////////
+features/core/commonMain/kotlin/com/..../core/auth/GoogleTokenStoreProvider.kt
+////////////////////////
+
+
+expect object GoogleTokenStoreProvider {
+  fun get(): GoogleTokenStore
+}
+
+/////////////////////////////
+features/core/androidMain/kotlin/com/..../core/auth/GoogleTokenStoreProvider.kt
+//////////////////////////
+
+
+import android.content.Context
+
+actual object GoogleTokenStoreProvider {
+  private lateinit var instance: GoogleTokenStore
+
+  fun initialize(context: Context) {
+    instance = AndroidGoogleTokenStore(context)
+  }
+
+  actual fun get(): GoogleTokenStore = instance
+}
+
+
+/////////////////////////////
+features/core/androidMain/kotlin/com/..../core/auth/AndroidGoogleTokenStore.kt
+//////////////////////////
+
+
+import android.content.Context
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+
+class AndroidGoogleTokenStore(context: Context) : GoogleTokenStore {
+  private val masterKey = MasterKey.Builder(context)
+    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+    .build()
+
+  private val prefs = EncryptedSharedPreferences.create(
+    context,
+    "secure_token_prefs",
+    masterKey,
+    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+  )
+
+  override suspend fun setToken(token: String, expiresAtMillis: Long) {
+    prefs.edit()
+      .putString("google_token", token)
+      .putLong("expires_at", expiresAtMillis)
+      .apply()
+  }
+
+  override suspend fun getToken(): String? {
+    val token = prefs.getString("google_token", null)
+    val expires = prefs.getLong("expires_at", 0L)
+    return if (System.currentTimeMillis() < expires) token else null
+  }
+
+  override suspend fun isTokenValid(): Boolean = getToken() != null
+
+  override suspend fun clearToken() {
+    prefs.edit().clear().apply()
+  }
+}
+
+
